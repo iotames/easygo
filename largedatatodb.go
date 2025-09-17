@@ -13,18 +13,17 @@ import (
 )
 
 const batchSize = 2000
-
-// 20097241
-const maxBatchSize = 5000
-const userName = "postgres"
-const password = "postgres"
+const maxBatchSize = 20097241
+const dbUser = "postgres"
+const dbPassword = "postgres"
 const dbName = "postgres"
+const filePath = "D:\\Users\\santic\\Documents\\filelist_large.txt"
 
 var d *easydb.EasyDb
 
 func main() {
 	var sqlresult sql.Result
-	file, err := os.Open("D:\\Users\\myname\\Documents\\filelist_large.txt")
+	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 		return
@@ -50,14 +49,19 @@ func main() {
 			// fmt.Println("----写入数据库", rows)
 			sql := `INSERT INTO filelist (raw_line_data,raw_line_data_len) VALUES %s`
 			sqlvalues := []string{}
+			sqli := 1
+			sqlargs := []interface{}{}
 			for _, row := range rows {
-				// sqlvalues = append(sqlvalues, fmt.Sprintf("('%s')", row))
-				escapedRow := strings.Replace(row, "'", "''", -1)
-				sqlvalues = append(sqlvalues, fmt.Sprintf("('%s',%d)", escapedRow, len(escapedRow)))
+				// // sqlvalues = append(sqlvalues, fmt.Sprintf("('%s')", row))
+				// escapedRow := strings.Replace(row, "'", "''", -1)
+				// sqlvalues = append(sqlvalues, fmt.Sprintf("('%s',%d)", escapedRow, len(escapedRow)))
+				sqlargs = append(sqlargs, row, len(row))
+				sqlvalues = append(sqlvalues, fmt.Sprintf("($%d,$%d)", sqli, sqli+1))
+				sqli += 2
 			}
 			sql = fmt.Sprintf(sql, strings.Join(sqlvalues, ",")+";")
 			// fmt.Printf("------sql(%s)---", sql)
-			sqlresult, err = d.Exec(sql)
+			sqlresult, err = d.Exec(sql, sqlargs...)
 			if err != nil {
 				panic(err)
 			}
@@ -70,18 +74,23 @@ func main() {
 	if len(rows) > 0 {
 		sql := `INSERT INTO filelist (raw_line_data,raw_line_data_len) VALUES %s`
 		sqlvalues := []string{}
+
+		sqli := 1
+		sqlargs := []interface{}{}
 		for _, row := range rows {
 			i++
-			escapedRow := strings.Replace(row, "'", "''", -1)
-			sqlvalues = append(sqlvalues, fmt.Sprintf("('%s',%d)", escapedRow, len(escapedRow)))
-
+			// escapedRow := strings.Replace(row, "'", "''", -1)
+			// sqlvalues = append(sqlvalues, fmt.Sprintf("('%s',%d)", escapedRow, len(escapedRow)))
+			sqlargs = append(sqlargs, row, len(row))
+			sqlvalues = append(sqlvalues, fmt.Sprintf("($%d,$%d)", sqli, sqli+1))
+			sqli += 2
 			// TODO
 		}
 		fmt.Println("最后处理行数", i)
 
 		sql = fmt.Sprintf(sql, strings.Join(sqlvalues, ",")+";")
 		// fmt.Printf("------sql(%s)---", sql)
-		sqlresult, err = d.Exec(sql)
+		sqlresult, err = d.Exec(sql, sqlargs...)
 		if err != nil {
 			panic(err)
 		}
@@ -108,7 +117,7 @@ func init() {
 		file_type VARCHAR(64),
 		end_user VARCHAR(255)
     )`
-	d = easydb.NewEasyDb("postgres", "172.16.160.12", "qiniu", "123456", dbName, 5432)
+	d = easydb.NewEasyDb("postgres", "172.16.160.12", dbUser, dbPassword, dbName, 5432)
 	// 测试连接d
 	if err = d.Ping(); err != nil {
 		log.Fatal(err)
