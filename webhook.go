@@ -82,10 +82,9 @@ func init() {
 		deleted_at timestamp NULL,
 		created_at timestamp DEFAULT CURRENT_TIMESTAMP,
 		updated_at timestamp DEFAULT CURRENT_TIMESTAMP
-    );
-CREATE UNIQUE INDEX IF NOT EXISTS "UQE_client_ip" ON qiniu_cdnauth_requests USING btree (client_ip);
-CREATE UNIQUE INDEX IF NOT EXISTS "UQE_http_referer" ON qiniu_cdnauth_requests USING btree (http_referer);
-	`
+    );`
+	// 	CREATE UNIQUE INDEX IF NOT EXISTS "UQE_client_ip" ON qiniu_cdnauth_requests USING btree (client_ip);
+	// CREATE UNIQUE INDEX IF NOT EXISTS "UQE_http_referer" ON qiniu_cdnauth_requests USING btree (http_referer);
 	d = easydb.NewEasyDb(DbDriverName, DbHost, DbUser, DbPassword, DbName, DbPort)
 	// 测试连接d
 	if err = d.Ping(); err != nil {
