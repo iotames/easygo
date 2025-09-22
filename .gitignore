@@ -1,5 +1,7 @@
 *.yml
 *.csv
 *.exe
+.env
+default.env
 go.mod
 go.sum
