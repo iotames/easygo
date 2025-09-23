@@ -82,9 +82,10 @@ func init() {
 		deleted_at timestamp NULL,
 		created_at timestamp DEFAULT CURRENT_TIMESTAMP,
 		updated_at timestamp DEFAULT CURRENT_TIMESTAMP
-    );`
-	// 	CREATE UNIQUE INDEX IF NOT EXISTS "UQE_client_ip" ON qiniu_cdnauth_requests USING btree (client_ip);
-	// CREATE UNIQUE INDEX IF NOT EXISTS "UQE_http_referer" ON qiniu_cdnauth_requests USING btree (http_referer);
+    );
+CREATE INDEX IF NOT EXISTS "IDX_client_ip" ON qiniu_cdnauth_requests USING btree (client_ip);
+CREATE INDEX IF NOT EXISTS "IDX_http_referer" ON qiniu_cdnauth_requests USING btree (http_referer);`
+
 	d = easydb.NewEasyDb(DbDriverName, DbHost, DbUser, DbPassword, DbName, DbPort)
 	// 测试连接d
 	if err = d.Ping(); err != nil {
@@ -96,3 +97,13 @@ func init() {
 		panic(err)
 	}
 }
+
+// SELECT client_ip, COUNT(*) AS request_count
+// FROM public.qiniu_cdnauth_requests
+// WHERE created_at >= NOW() - INTERVAL '10 minutes'
+// --WHERE created_at >= NOW() - INTERVAL '1 hour'
+// GROUP BY client_ip
+// ORDER BY request_count DESC
+// LIMIT 10;
+// -- 最近10分钟内网络请求最频繁的前10名IP
+// -- 最近1小时内网络请求最频繁的前10名IP
