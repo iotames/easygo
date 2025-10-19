@@ -6,8 +6,12 @@ import (
 	"strings"
 )
 
+func main() {
+	codegen()
+}
+
 func codegen() {
-	fmt.Println("请输入编码:")
+	fmt.Println("请输入编码(例：AU9CA):")
 	var code string
 	fmt.Scanln(&code)
 	code = strings.ToUpper(strings.TrimSpace(code))

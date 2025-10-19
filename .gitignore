@@ -1,6 +1,7 @@
 *.yml
 *.csv
 *.exe
+*.log
 .env
 default.env
 go.mod
