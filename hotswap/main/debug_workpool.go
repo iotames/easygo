@@ -13,7 +13,7 @@ import (
 //
 // 测试发现 8 核生产服务器在处理 I/O 密集的 API 时，使用 24 个工作线程表现最佳。这个看似很小的数字，却能处理超过每秒 100 万请求，同时保持 P99 延迟在 10 毫秒以下。
 // 使用示例
-func main() {
+func debug_workerpool() {
 
 	// TODO 可集成服务器性能监控服务。
 	// 在实际应用中，可以通过监控以下指标来动态调整这些参数：
@@ -32,7 +32,7 @@ func main() {
 	}
 
 	// 创建工作池
-	pool := hotswap.New(config)
+	pool := hotswap.NewWorkerPool(config)
 	pool.Start()
 	defer pool.Stop()
 

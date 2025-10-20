@@ -40,8 +40,8 @@ type Config struct {
 	QueueSize  int // 队列大小
 }
 
-// New 创建工作池
-func New(config Config) *WorkerPool {
+// NewWorkerPool 创建工作池
+func NewWorkerPool(config Config) *WorkerPool {
 	if config.MinWorkers <= 0 {
 		config.MinWorkers = runtime.NumCPU() * 2
 	}

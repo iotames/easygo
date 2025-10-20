@@ -26,7 +26,7 @@ func main() {
 	// 关闭整个d连接池
 	defer d.CloseDb()
 	s := httpsvr.NewEasyServer(fmt.Sprintf(":%d", WebPort))
-	s.AddMiddleware(httpsvr.NewMiddleCORS("*"))
+	s.AddMiddleHead(httpsvr.NewMiddleCORS("*"))
 	s.AddHandler("GET", "/cdnauth", func(ctx httpsvr.Context) {
 		sql := `INSERT INTO qiniu_cdnauth_requests (request_id,client_ip,x_forwarded_for,user_agent,http_referer,request_url,request_headers,raw_url) VALUES ($1,$2,$3,$4,$5,$6,$7, $8)`
 		q := ctx.Request.URL.Query()
@@ -67,7 +67,7 @@ func init() {
 	cf.StringVar(&DbName, "DB_NAME", "qiniudb", "数据库名称")
 	cf.IntVar(&DbPort, "DB_PORT", 5432, "数据库端口")
 	cf.IntVar(&WebPort, "WEB_PORT", 1212, "web服务端口")
-	cf.Parse()
+	cf.Parse(false)
 
 	sqlCreateTable := `CREATE TABLE IF NOT EXISTS qiniu_cdnauth_requests (
         id SERIAL PRIMARY KEY,
