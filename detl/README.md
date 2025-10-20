@@ -5,3 +5,5 @@
 1. 抽取：MySQL, Postgres, 文件，API接口等
 2. 转换：通过脚本表达式或脚本语言转换
 3. 载入：输出结果到另一个数据库，文件，API接口等
+
+项目已合并至：https://github.com/iotames/detl
