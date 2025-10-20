@@ -66,15 +66,20 @@ func (wp *WorkerPool) Start() {
 }
 
 // Submit 提交任务（阻塞）
+// 如果任务队列已满，则会等待直至任务队列有空闲位置。
 func (wp *WorkerPool) Submit(task Task) {
 	wp.taskQueue <- task
+	// 原子操作，更新队列大小
 	atomic.StoreInt32(&wp.queueSize, int32(len(wp.taskQueue)))
 }
 
 // TrySubmit 尝试提交任务（非阻塞）
+// 如果任务队列已满，则不等待，立即返回false。
+// 也可使用SubmitWithTimeout。然后把超时失败的任务放到监控统计中，以便后续优化。
 func (wp *WorkerPool) TrySubmit(task Task) bool {
 	select {
 	case wp.taskQueue <- task:
+		// 原子操作，更新队列大小
 		atomic.StoreInt32(&wp.queueSize, int32(len(wp.taskQueue)))
 		return true
 	default:
@@ -83,12 +88,18 @@ func (wp *WorkerPool) TrySubmit(task Task) bool {
 }
 
 // SubmitWithTimeout 带超时提交
+// 如果任务队列已满，则指定等待时间（默认3秒），如超过等待时间，且队列仍然满则放弃。返回false。
+// 例如等待时间超3秒，已严重影响用户体验。放弃后加入监控统计的失败池中，以便后续优化。
 func (wp *WorkerPool) SubmitWithTimeout(task Task, timeout time.Duration) bool {
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	select {
 	case wp.taskQueue <- task:
+		// 原子操作，更新队列大小
 		atomic.StoreInt32(&wp.queueSize, int32(len(wp.taskQueue)))
 		return true
 	case <-ctx.Done():
@@ -98,6 +109,7 @@ func (wp *WorkerPool) SubmitWithTimeout(task Task, timeout time.Duration) bool {
 
 // QueueSize 获取当前队列大小
 func (wp *WorkerPool) QueueSize() int {
+	// 原子操作，获取队列大小
 	return int(atomic.LoadInt32(&wp.queueSize))
 }
 
@@ -113,6 +125,7 @@ func (wp *WorkerPool) worker() {
 	for {
 		select {
 		case task := <-wp.taskQueue:
+			// 原子操作，更新队列大小
 			atomic.StoreInt32(&wp.queueSize, int32(len(wp.taskQueue)))
 			task.Execute()
 		case <-wp.quit:
