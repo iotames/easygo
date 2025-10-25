@@ -11,6 +11,30 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
+func getPacketNetworkInfo(packet gopacket.Packet) (srcIP, dstIP net.IP, protocol layers.IPProtocol, ok bool) {
+	// 获取网络层（IP）信息
+	ok = false
+	ipLayer := packet.NetworkLayer()
+	if ipLayer == nil {
+		return
+	}
+	switch v := ipLayer.(type) {
+	case *layers.IPv4:
+		srcIP = v.SrcIP
+		dstIP = v.DstIP
+		protocol = v.Protocol
+		ok = true
+	case *layers.IPv6:
+		srcIP = v.SrcIP
+		dstIP = v.DstIP
+		protocol = v.NextHeader
+		ok = true
+	default:
+		return
+	}
+	return
+}
+
 // processCapturedPacket 处理捕获到的数据包
 func processCapturedPacket(packet gopacket.Packet) {
 	// 添加recover防止单个包处理失败影响整个程序
@@ -19,38 +43,25 @@ func processCapturedPacket(packet gopacket.Packet) {
 			log.Warn("处理数据包时发生panic:", "panic", r)
 		}
 	}()
-
-	// 获取网络层（IP）信息
-	ipLayer := packet.NetworkLayer()
-	if ipLayer == nil {
-		return
-	}
-
-	var srcIP, dstIP net.IP
-	var protocol layers.IPProtocol
-
-	switch v := ipLayer.(type) {
-	case *layers.IPv4:
-		srcIP = v.SrcIP
-		dstIP = v.DstIP
-		protocol = v.Protocol
-	case *layers.IPv6:
-		srcIP = v.SrcIP
-		dstIP = v.DstIP
-		protocol = v.NextHeader
-	default:
+	srcIP, dstIP, protocol, ok := getPacketNetworkInfo(packet)
+	if !ok {
 		return
 	}
 
 	// 获取传输层（TCP/UDP）信息
 	var srcPort, dstPort uint16
-	switch transportLayer := packet.TransportLayer().(type) {
+	// 先检查 TransportLayer 是否为 nil，避免直接类型断言为 nil 导致不可预期行为
+	transportLayer := packet.TransportLayer()
+	if transportLayer == nil {
+		return
+	}
+	switch tl := transportLayer.(type) {
 	case *layers.TCP:
-		srcPort = uint16(transportLayer.SrcPort)
-		dstPort = uint16(transportLayer.DstPort)
+		srcPort = uint16(tl.SrcPort)
+		dstPort = uint16(tl.DstPort)
 	case *layers.UDP:
-		srcPort = uint16(transportLayer.SrcPort)
-		dstPort = uint16(transportLayer.DstPort)
+		srcPort = uint16(tl.SrcPort)
+		dstPort = uint16(tl.DstPort)
 	default:
 		return
 	}
@@ -120,6 +131,7 @@ func updatePacketRecord(localIP net.IP, localPort uint16, remoteIP net.IP, remot
 			ProcessName: processName,
 			ProcessPID:  pid,
 			LastUpdate:  time.Now(),
+			LastLogTime: time.Now(), // 新增：初始化 LastLogTime，避免新建就触发周期日志
 		}
 		trafficMap.Store(key, record)
 		msg := fmt.Sprintf("新建连接%s：", arrow)

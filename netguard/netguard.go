@@ -29,9 +29,10 @@ type TrafficRecord struct {
 
 // 全局变量
 var (
-	trafficMap    sync.Map // key: "LocalIP:LocalPort" string, value: *TrafficRecord
-	connectionMap sync.Map // key: "IP:Port" string, value: int32 (PID)
-	localIPs      []net.IP // 缓存本地IP列表
+	trafficMap    sync.Map     // key: "LocalIP:LocalPort" string, value: *TrafficRecord
+	connectionMap sync.Map     // key: "IP:Port" string, value: int32 (PID)
+	localIPs      []net.IP     // 缓存本地IP列表
+	localIPsMutex sync.RWMutex // 新增：保护 localIPs 的并发访问
 )
 
 func init() {
@@ -46,6 +47,10 @@ func init() {
 func Run() {
 	// 1. 获取网络接口列表并选择（这里选择第一个非环回接口为例）
 	dev := GetDefaultDevice()
+	if dev.Name == "" {
+		log.Error("未找到可用网络设备，退出监控")
+		return
+	}
 	log.Info("开始监控：", "设备", dev.Name, "详情", dev.Description)
 
 	// 2. 打开设备进行捕获
@@ -86,8 +91,21 @@ func Run() {
 			}
 		}()
 	}
-	// 在packetSource循环中发送到channel
+
+	// 在packetSource循环中发送到channel，使用非阻塞发送以防阻塞捕获循环
 	for packet := range packetSource.Packets() {
-		packetChan <- packet
+		select {
+		case packetChan <- packet:
+			// 正常入队
+		default:
+			// 缓冲区满，丢包并记录少量调试信息以便排查
+			srcIP, dstIP, protocol, ok := getPacketNetworkInfo(packet)
+			if ok {
+				log.Error("packetChan 满，丢弃一个数据包", "srcIP", srcIP, "dstIP", dstIP, "protocol", protocol)
+			}
+		}
 	}
+
+	// 抓包结束后关闭 channel，让 worker 退出
+	close(packetChan)
 }

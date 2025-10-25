@@ -10,11 +10,9 @@ import (
 // GetDefaultDevice 获取默认的网络设备。选择第一个非环回接口。
 func GetDefaultDevice() pcap.Interface {
 	devices, err := pcap.FindAllDevs()
-	// for _, device := range devices {
-	// 	log.Debug("设备信息", "名称", device.Name, "详情", device.Description, "地址", device.Addresses)
-	// }
 	if err != nil {
 		log.Error("无法获取网络设备列表:", "错误", err)
+		return pcap.Interface{} // 提前返回空设备
 	}
 
 	var defaultDevice pcap.Interface

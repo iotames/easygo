@@ -53,7 +53,10 @@ func updateLocalIPs() {
 		}
 	}
 
+	// 使用写锁替换整个切片，避免并发读取时竞争
+	localIPsMutex.Lock()
 	localIPs = ips
+	localIPsMutex.Unlock()
 }
 
 // findPidByConnection 通过IP和端口查找对应的进程PID
@@ -139,7 +142,9 @@ func queryProcessRealTime(ip net.IP, port uint16) int32 {
 
 // isLocalIP 判断一个IP地址是否为本地IP
 func isLocalIP(ip net.IP) bool {
-	// 实现逻辑：获取本机所有IP地址，检查参数IP是否在其中
+	// 使用读锁保护 localIPs 访问
+	localIPsMutex.RLock()
+	defer localIPsMutex.RUnlock()
 	for _, localIP := range localIPs {
 		if localIP.Equal(ip) {
 			return true
