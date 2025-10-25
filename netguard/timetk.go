@@ -77,3 +77,15 @@ func updateProcessConnectionMap() {
 		})
 	}
 }
+
+// 定期清理进程查询缓存
+func cleanupProcessCache() {
+	ticker := time.NewTicker(10 * time.Minute)
+	for {
+		<-ticker.C
+		processCacheMutex.Lock()
+		processQueryCache = make(map[string]int32) // 简单清空
+		processCacheMutex.Unlock()
+		log.Debug("已清理进程查询缓存")
+	}
+}

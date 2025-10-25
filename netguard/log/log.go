@@ -8,8 +8,10 @@ import (
 )
 
 var (
-	lg   *slog.Logger
-	once sync.Once
+	lg      *slog.Logger
+	lgLevel *slog.LevelVar
+	opts    *slog.HandlerOptions
+	once    sync.Once
 )
 
 // Debug 记录调试级别日志
@@ -32,31 +34,40 @@ func Error(msg string, args ...any) {
 	getLogger().Error(msg, args...)
 }
 
+// SetLevel 设置日志级别
+func SetLevel(level slog.Level) {
+	lgLevel.Set(level)
+}
+
+func NewOptions() *slog.HandlerOptions {
+	// 设置 HandlerOptions，自定义时间属性
+	lgLevel = &slog.LevelVar{}
+	lgLevel.Set(slog.LevelDebug)
+	return &slog.HandlerOptions{
+		Level: lgLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// 如果当前属性是时间戳
+			if a.Key == slog.TimeKey && len(groups) == 0 {
+				a.Key = "time" // 键名可以保持不变或修改
+				// 将时间值转换为自定义格式
+				if t, ok := a.Value.Any().(time.Time); ok {
+					a.Value = slog.StringValue(t.Format(time.DateTime))
+				}
+			}
+			return a
+		},
+	}
+}
+
 // getLogger 获取单例日志实例
 func getLogger() *slog.Logger {
 	once.Do(func() {
-		if lg == nil {
-
-			// 设置 HandlerOptions，自定义时间属性
-			opts := &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-
-				ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-					// 如果当前属性是时间戳
-					if a.Key == slog.TimeKey && len(groups) == 0 {
-						a.Key = "time" // 键名可以保持不变或修改
-						// 将时间值转换为自定义格式
-						if t, ok := a.Value.Any().(time.Time); ok {
-							a.Value = slog.StringValue(t.Format(time.DateTime))
-						}
-					}
-					return a
-				},
-			}
-
-			lg = slog.New(slog.NewTextHandler(os.Stdout, opts))
-
-		}
+		opts = NewOptions()
+		lg = slog.New(slog.NewTextHandler(os.Stdout, opts))
 	})
 	return lg
+}
+
+func init() {
+	getLogger()
 }

@@ -88,10 +88,29 @@ func processCapturedPacket(packet gopacket.Packet) {
 
 // updatePacketRecord 更新流量统计信息
 func updatePacketRecord(localIP net.IP, localPort uint16, remoteIP net.IP, remotePort uint16, protocol, processName string, pid int32, traffic uint64, isInbound bool) {
+	var direction, arrow string
+	if isInbound {
+		direction = "入站"
+		arrow = "<-"
+	} else {
+		direction = "出站"
+		arrow = "->"
+	}
 	key := fmt.Sprintf("%s:%d", localIP.String(), localPort)
 
 	record, exists := trafficMap.Load(key)
 	if !exists {
+		// 新建连接
+		if realTimeProcessQuery && pid == 0 {
+			// 强制查询进程信息
+			pid = queryProcessRealTime(localIP, localPort)
+			if pid > 0 {
+				proc, err := process.NewProcess(pid)
+				if err == nil {
+					processName, _ = proc.Name()
+				}
+			}
+		}
 		record = &TrafficRecord{
 			LocalIP:     localIP,
 			LocalPort:   localPort,
@@ -103,14 +122,6 @@ func updatePacketRecord(localIP net.IP, localPort uint16, remoteIP net.IP, remot
 			LastUpdate:  time.Now(),
 		}
 		trafficMap.Store(key, record)
-
-		// 新连接日志
-		direction := "出站"
-		arrow := "->"
-		if isInbound {
-			direction = "入站"
-			arrow = "<-"
-		}
 		msg := fmt.Sprintf("新建连接%s：", arrow)
 		log.Info(msg, "方向", direction, "本地IP", localIP, "本地端口", localPort, "远程IP", remoteIP, "远程端口", remotePort, "进程", processName, "PID", pid, "字节大小", traffic)
 	}
@@ -119,26 +130,21 @@ func updatePacketRecord(localIP net.IP, localPort uint16, remoteIP net.IP, remot
 		tr.Lock()
 		defer tr.Unlock()
 
+		if isInbound {
+			tr.BytesReceived += traffic
+		} else {
+			tr.BytesSent += traffic
+		}
+
 		// 基于时间间隔的日志：每10秒记录一次该连接的流量统计
 		if time.Since(tr.LastLogTime) > 10*time.Second {
-			direction := "出站"
-			arrow := "->"
-			if isInbound {
-				direction = "入站"
-				arrow = "<-"
-			}
-
 			// 记录流量统计而非单个包
 			msg := fmt.Sprintf("流量统计%s：", arrow)
 			log.Debug(msg, "方向", direction, "本地端口", localPort, "远程IP", remoteIP, "远程端口", remotePort, "协议", protocol,
 				"进程", processName, "PID", pid, "累计发送字节", tr.BytesSent, "累计接收字节", tr.BytesReceived, "当前包字节", traffic)
 			tr.LastLogTime = time.Now()
 		}
-		if isInbound {
-			tr.BytesReceived += traffic
-		} else {
-			tr.BytesSent += traffic
-		}
+
 		tr.LastUpdate = time.Now()
 		// 更新其他可能变化的信息
 		if processName != "" {

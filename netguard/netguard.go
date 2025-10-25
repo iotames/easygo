@@ -39,6 +39,8 @@ func init() {
 	updateLocalIPs()
 	// 定期清理长时间未更新的trafficMap记录
 	go cleanTrafficMap(0)
+	// 定期清理进程查询缓存
+	go cleanupProcessCache()
 }
 
 func Run() {
@@ -54,6 +56,7 @@ func Run() {
 	handle, err := pcap.OpenLive(dev.Name, 1600, true, pcap.BlockForever)
 	if err != nil {
 		log.Error("打开设备失败:", "错误", err)
+		panic(err)
 	}
 	defer handle.Close()
 
