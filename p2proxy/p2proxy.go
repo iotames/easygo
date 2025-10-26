@@ -384,14 +384,18 @@ func (n *Node) readLoop() {
 // m: 包含目标地址和数据流ID的请求消息
 // fromAddr: 请求方的网络地址
 func (n *Node) handleStreamOpen(m ProtoMsg, fromAddr *net.UDPAddr) {
-	log.Printf("node %s received stream_open request from %s for target %s with stream_id %s",
-		n.ID, m.From, m.Target, m.StreamID)
+	log.Printf("node %s received stream_open request from %s (%s) for target %s with stream_id %s",
+		n.ID, m.From, fromAddr.String(), m.Target, m.StreamID)
 
 	// 检查必要参数
 	if m.Target == "" || m.StreamID == "" {
 		log.Printf("invalid stream_open request: missing target or stream_id")
 		return
 	}
+
+	// 立即回复确认收到
+	ackMsg := ProtoMsg{Type: "stream_ack", From: n.ID, StreamID: m.StreamID}
+	n.sendProto(fromAddr, ackMsg)
 
 	// 连接到目标服务器
 	log.Printf("node %s: opening stream %s to target %s for peer %s", n.ID, m.StreamID, m.Target, m.From)
@@ -602,15 +606,30 @@ func (n *Node) handleSocksConn(c net.Conn, peerID string) {
 
 	// 发送探测包帮助 NAT 穿透，增加尝试次数
 	log.Printf("sending probe packets to help NAT traversal")
-	for i := 0; i < 10; i++ { // 增加探测包数量
+
+	// 第一阶段：快速发送探测包
+	for i := 0; i < 5; i++ {
 		err := n.sendProto(peerAddr, ProtoMsg{Type: "probe", From: n.ID})
 		if err != nil {
 			log.Printf("failed to send probe packet %d: %v", i, err)
 		}
-		time.Sleep(50 * time.Millisecond) // 缩短间隔
+		time.Sleep(20 * time.Millisecond)
 	}
+
+	// 第二阶段：等待对方可能的探测包
+	time.Sleep(200 * time.Millisecond)
+
+	// 第三阶段：再次发送探测包，增加成功率
+	for i := 0; i < 5; i++ {
+		err := n.sendProto(peerAddr, ProtoMsg{Type: "probe", From: n.ID})
+		if err != nil {
+			log.Printf("failed to send probe packet %d: %v", i, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	log.Printf("sent 10 probe packets, waiting for NAT to stabilize")
-	time.Sleep(1 * time.Second) // 增加等待时间
+	time.Sleep(500 * time.Millisecond)
 
 	// 创建数据流ID
 	sid := fmt.Sprintf("%d", rand.Int63())
@@ -623,39 +642,49 @@ func (n *Node) handleSocksConn(c net.Conn, peerID string) {
 	n.ready[sid] = ch
 	n.mu.Unlock()
 
-	// 向远端节点发送连接请求
-	open := ProtoMsg{Type: "stream_open", From: n.ID, StreamID: sid, Target: dstAddr}
-	log.Printf("sending stream_open request to peer %s for target %s", peerID, dstAddr)
-	if err := n.sendProto(peerAddr, open); err != nil {
-		log.Printf("send stream_open error: %v", err)
-		n.mu.Lock()
-		delete(n.ready, sid)
-		delete(n.streams, sid)
-		n.mu.Unlock()
-		return
-	}
+	// 在发送 stream_open 前添加重试机制
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			log.Printf("retry %d for stream_open", retry)
+			// 重新发送探测包
+			for i := 0; i < 3; i++ {
+				n.sendProto(peerAddr, ProtoMsg{Type: "probe", From: n.ID})
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
 
-	// 等待远端节点准备就绪（最多等待15秒）
-	log.Printf("waiting for stream_ready from peer (timeout: 15s)")
-	select {
-	case <-ch:
-		log.Printf("received stream_ready, connection established")
-		// 远端节点已准备就绪
+		// 向远端节点发送连接请求
+		open := ProtoMsg{Type: "stream_open", From: n.ID, StreamID: sid, Target: dstAddr}
+		log.Printf("sending stream_open request to peer %s for target %s", peerID, dstAddr)
+		if err := n.sendProto(peerAddr, open); err != nil {
+			log.Printf("send stream_open error: %v", err)
+			continue
+		}
 
-	case <-time.After(15 * time.Second): // 增加超时时间到15秒
-		log.Printf("warning: timed out waiting for stream_ready for %s, this usually means NAT hole punching failed", sid)
-		log.Printf("diagnostic info:")
-		log.Printf("  - Peer address: %s", peerAddr.String())
-		log.Printf("  - Local UDP address: %s", n.conn.LocalAddr().String())
-		log.Printf("  - This may be caused by strict NAT/firewall settings")
-		log.Printf("tip: try placing one node on a public IP, or configure your firewall/NAT to allow UDP traffic")
-
-		// 清理资源
-		n.mu.Lock()
-		delete(n.ready, sid)
-		delete(n.streams, sid)
-		n.mu.Unlock()
-		return
+		// 等待远端节点准备就绪
+		log.Printf("waiting for stream_ready from peer (attempt %d)", retry+1)
+		select {
+		case <-ch:
+			log.Printf("received stream_ready, connection established")
+			break // 成功，跳出重试循环
+		case <-time.After(5 * time.Second): // 每次尝试等待5秒
+			if retry == maxRetries-1 {
+				log.Printf("warning: all %d attempts failed, NAT hole punching failed", maxRetries)
+				log.Printf("diagnostic info:")
+				log.Printf("  - Peer address: %s", peerAddr.String())
+				log.Printf("  - Local UDP address: %s", n.conn.LocalAddr().String())
+				log.Printf("  - This may be caused by strict NAT/firewall settings")
+				log.Printf("tip: try placing one node on a public IP, or configure your firewall/NAT to allow UDP traffic")
+				n.mu.Lock()
+				delete(n.ready, sid)
+				delete(n.streams, sid)
+				n.mu.Unlock()
+				return
+			}
+			continue // 继续重试
+		}
+		break // 成功建立连接，跳出循环
 	}
 
 	// 启动goroutine从本地SOCKS客户端读取数据并转发给远端节点
