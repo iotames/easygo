@@ -1,6 +1,7 @@
 *.yml
 *.csv
 *.exe
+*.exe~
 *.log
 .env
 default.env
