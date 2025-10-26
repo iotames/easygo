@@ -3,6 +3,7 @@ package p2proxy
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -170,30 +171,26 @@ func TestSmokeP2Proxy(t *testing.T) {
 	}
 	t.Log("HTTP请求已发送")
 
-	// 读取HTTP响应
+	// 使用 http.ReadResponse 更可靠地读取 HTTP 响应
 	r := bufio.NewReader(conn)
-
-	// 读取状态行
-	line, err := r.ReadString('\n')
+	resp, err := http.ReadResponse(r, &http.Request{Method: "GET"})
 	if err != nil {
 		t.Fatalf("读取HTTP响应失败: %v", err)
 	}
-	t.Logf("收到HTTP响应状态行: %s", strings.TrimSpace(line))
+	defer resp.Body.Close()
+	t.Logf("收到HTTP响应状态: %s", resp.Status)
 
 	// 验证响应状态码是否为200
-	if !strings.Contains(line, "200") {
-		t.Fatalf("期望HTTP状态码200，实际收到: %s", strings.TrimSpace(line))
+	if resp.StatusCode != 200 {
+		t.Fatalf("期望HTTP状态码200，实际收到: %s", resp.Status)
 	}
 
-	// 继续读取响应体（验证连接是否正常工作）
-	responseBody := ""
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			break
-		}
-		responseBody += line
+	// 读取响应体
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("读取HTTP响应体失败: %v", err)
 	}
+	responseBody := string(bodyBytes)
 
 	// 验证响应体内容
 	if !strings.Contains(responseBody, "Hello P2P Proxy!") {
@@ -205,13 +202,16 @@ func TestSmokeP2Proxy(t *testing.T) {
 	// 清理资源：通过关闭Tracker连接来关闭Tracker服务器
 	t.Log("正在关闭Tracker服务器...")
 	if tr.conn != nil {
-		tr.conn.Close()
+		if err := tr.Close(); err != nil {
+			t.Logf("关闭Tracker时出错: %v", err)
+		}
 	}
 
 	// 等待Tracker goroutine退出或超时
 	select {
 	case err := <-done:
-		if err != nil && err.Error() != "use of closed network connection" {
+		// 忽略连接已关闭的错误，这是预期的
+		if err != nil && !strings.Contains(err.Error(), "closed") {
 			t.Logf("Tracker退出时出现错误: %v", err)
 		} else {
 			t.Log("Tracker服务器已正常关闭")

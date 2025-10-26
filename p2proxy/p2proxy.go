@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -76,6 +77,11 @@ func (t *Tracker) Run() error {
 		// 从UDP连接读取数据
 		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
+			// 如果是连接关闭的错误，直接退出循环
+			if strings.Contains(err.Error(), "closed") {
+				log.Printf("tracker shutting down...")
+				return nil
+			}
 			log.Printf("tracker read error: %v", err)
 			continue
 		}
@@ -341,7 +347,15 @@ func (n *Node) readLoop() {
 					// 解码base64数据并写入本地连接
 					data, err := base64.StdEncoding.DecodeString(m.Data)
 					if err == nil {
-						c.Write(data)
+						// 如果写入失败，需要清理对应的 stream，避免后续写入到已关闭连接导致 RST
+						if _, werr := c.Write(data); werr != nil {
+							log.Printf("write to local conn error: %v, cleaning stream %s", werr, m.StreamID)
+							n.mu.Lock()
+							delete(n.streams, m.StreamID)
+							n.mu.Unlock()
+							// 优雅关闭写端，避免触发 RST
+							closeConnWrite(c)
+						}
 					}
 				}
 			}
@@ -354,7 +368,8 @@ func (n *Node) readLoop() {
 				delete(n.streams, m.StreamID)
 				n.mu.Unlock()
 				if c != nil {
-					c.Close()
+					// 优雅地半关闭写端，让对端能优雅结束读操作
+					closeConnWrite(c)
 				}
 			}
 
@@ -417,16 +432,17 @@ func (n *Node) handleStreamOpen(m ProtoMsg, fromAddr *net.UDPAddr) {
 				if err != io.EOF {
 					log.Printf("read target error: %v", err)
 				}
-				// 读取结束，通知远端节点关闭数据流
+				// 读取结束或出错，通知远端节点关闭数据流
 				cm := ProtoMsg{Type: "stream_close", From: n.ID, StreamID: m.StreamID}
 				n.sendProto(fromAddr, cm)
+
+				// 清理本地流映射并优雅关闭目标连接（只做一次删除）
 				n.mu.Lock()
 				delete(n.streams, m.StreamID)
 				n.mu.Unlock()
-				n.mu.Lock()
-				delete(n.streams, m.StreamID)
-				n.mu.Unlock()
-				c.Close()
+
+				// 优雅半关闭写端，避免触发 RST
+				closeConnWrite(c)
 				return
 			}
 		}
@@ -471,8 +487,6 @@ func (n *Node) StartSocks5(listenAddr string, peerID string) error {
 // c: 客户端连接
 // peerID: 用于转发流量的远端节点ID
 func (n *Node) handleSocksConn(c net.Conn, peerID string) {
-	defer c.Close()
-
 	// SOCKS5握手阶段
 	// 读取版本号、方法数和方法列表
 	hdr := make([]byte, 2)
@@ -669,11 +683,34 @@ func (n *Node) handleSocksConn(c net.Conn, peerID string) {
 				n.mu.Lock()
 				delete(n.streams, sid)
 				n.mu.Unlock()
-				c.Close()
+				// 优雅关闭写端，避免触发 RST 给对端
+				closeConnWrite(c)
 				return
 			}
 		}
 	}()
 
 	// 数据流的写入端（从远端节点到本地）由readLoop处理，它会写入到n.streams[sid]连接中
+}
+
+// 新增：优雅地关闭连接的写端，优先使用 TCP 的 CloseWrite，避免触发 RST
+func closeConnWrite(c net.Conn) {
+	if c == nil {
+		return
+	}
+	if tc, ok := c.(*net.TCPConn); ok {
+		// 忽略错误，尽力半关闭写端
+		_ = tc.CloseWrite()
+		return
+	}
+	// 回退到完全关闭
+	_ = c.Close()
+}
+
+// Close 优雅关闭 Tracker
+func (t *Tracker) Close() error {
+	if t.conn != nil {
+		return t.conn.Close()
+	}
+	return nil
 }

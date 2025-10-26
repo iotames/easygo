@@ -45,9 +45,10 @@ func main() {
 	if err := n.Register(); err != nil {
 		log.Printf("register error: %v", err)
 	}
-	// re-register every 30s
+	// re-register every 120s
+	// 每两分钟重新注册，防止连接意外断开
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(120 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			n.Register()
