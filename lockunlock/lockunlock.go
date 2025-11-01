@@ -1,47 +1,37 @@
-package main
+package lockunlock
 
 import (
 	"fmt"
 	"os"
-	"strings"
-
-	"github.com/iotames/easygo/lockunlock"
 )
 
-var AppVersion = "v0.0.1"
+func LockDirFiles(skey []byte) error {
+	return diropt("加密", func(fname string) error { return EncryptFile(fname, fname, skey) })
+}
 
-func main() {
-	if len(os.Args) == 2 && strings.Contains(os.Args[1], "version") {
-		fmt.Print("文件加密: ")
-		fmt.Println(AppVersion)
-		os.Exit(0)
-	}
-	key := []byte("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+func UnlockDirFiles(skey []byte) error {
+	return diropt("解密", func(fname string) error { return DecryptFile(fname, fname, skey) })
+}
 
-	// 检查密钥长度
-	if len(key) != 32 {
-		fmt.Println("错误: 密钥必须是32字节(AES-256)")
-		os.Exit(1)
-	}
-
+func diropt(optname string, eachopt func(fname string) error) error {
 	// 获取当前目录下的所有文件（不包括子目录）
 	entries, err := os.ReadDir(".")
 	if err != nil {
-		fmt.Printf("读取目录失败: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("读取目录失败：%v", err)
 	}
 
 	// 获取当前正在运行的可执行文件名
 	executable, err := os.Executable()
 	if err != nil {
-		fmt.Printf("获取可执行文件名失败: %v\n", err)
-		os.Exit(1)
+		fmt.Printf(" %v\n", err)
+		return fmt.Errorf("获取可执行文件名失败: %v", err)
 	}
+
 	execName := ""
 	if fileInfo, err := os.Stat(executable); err == nil {
 		execName = fileInfo.Name()
 	}
-
+	fmt.Println("当前文件名：", execName, "os.Args[0]", os.Args[0])
 	count := 0 // 记录处理的文件数量
 
 	// 遍历所有条目
@@ -59,19 +49,16 @@ func main() {
 		if filename == execName || filename == "." || filename == ".." {
 			continue
 		}
-
-		// 加密文件
-		if err := lockunlock.EncryptFile(filename, filename, key); err != nil {
+		if err := eachopt(filename); err != nil {
 			// 加密文件 encrypt.exe 失败: open encrypt.exe: The process cannot access the file because it is being used by another process.
-			fmt.Printf("加密文件 %s 失败: %v\n", filename, err)
-			// 继续处理其他文件，不退出
+			fmt.Printf("%s文件 %s 失败: %v\n", optname, filename, err)
 			continue
 		}
 
 		count++
-		fmt.Printf("文件加密成功: %s\n", filename)
+		fmt.Printf("文件%s成功: %s\n", optname, filename)
 	}
-
 	// 显示弹框提示
-	lockunlock.ShowMessage("加密完成", fmt.Sprintf("总共加密了 %d 个文件", count))
+	ShowMessage(fmt.Sprintf("%s完成", optname), fmt.Sprintf("总共%s了 %d 个文件", optname, count))
+	return nil
 }
