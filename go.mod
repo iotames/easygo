@@ -9,11 +9,13 @@ require (
 	github.com/iotames/easyserver v1.2.0
 	github.com/lib/pq v1.10.9
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
 	golang.org/x/net v0.5.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
+	github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/iotames/miniutils v1.0.11 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect

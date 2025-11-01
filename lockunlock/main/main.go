@@ -8,6 +8,10 @@ import (
 var AppVersion = "v0.1.1"
 
 func main() {
+	if dev {
+		devDebug()
+		return
+	}
 	if version {
 		fmt.Printf("lockunlock: %s", AppVersion)
 		os.Exit(0)
