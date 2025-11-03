@@ -3,19 +3,23 @@ package lockunlock
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
-func LockDirFiles(skey []byte) error {
-	return diropt("加密", func(fname string) error { return EncryptFile(fname, fname, skey) })
+func LockDirFiles(skey []byte, dir string) error {
+	return diropt("加密", dir, func(fname string) error { return EncryptFile(fname, fname, skey) })
 }
 
-func UnlockDirFiles(skey []byte) error {
-	return diropt("解密", func(fname string) error { return DecryptFile(fname, fname, skey) })
+func UnlockDirFiles(skey []byte, dir string) error {
+	return diropt("解密", dir, func(fname string) error { return DecryptFile(fname, fname, skey) })
 }
 
-func diropt(optname string, eachopt func(fname string) error) error {
-	// 获取当前目录下的所有文件（不包括子目录）
-	entries, err := os.ReadDir(".")
+func diropt(optname, dir string, eachopt func(fname string) error) error {
+	// 获取dir目录下的所有文件（不包括子目录）
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("读取目录失败：%v", err)
 	}
@@ -48,6 +52,9 @@ func diropt(optname string, eachopt func(fname string) error) error {
 		// filename == execName 替代 filename == os.Args[0]
 		if filename == execName || filename == "." || filename == ".." {
 			continue
+		}
+		if dir != "." {
+			filename = filepath.Join(dir, filename)
 		}
 		if err := eachopt(filename); err != nil {
 			// 加密文件 encrypt.exe 失败: open encrypt.exe: The process cannot access the file because it is being used by another process.

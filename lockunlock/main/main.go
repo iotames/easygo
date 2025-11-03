@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-var AppVersion = "v0.1.1"
+var AppVersion = "v1.0.0"
 
 func main() {
 	if dev {
