@@ -1,5 +1,8 @@
 ## 简介
 
+
+项目已合并至：[https://github.com/iotames/discovery](https://github.com/iotames/discovery)
+
 记录工作和学习中的Go语言代码片段：
 
 1. 解决简单事项的单文件代码。
